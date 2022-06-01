@@ -14,6 +14,8 @@
 
 #TODO
 # ERROR HANDLING. check every exit for error handling
+# LOGGING
+# COMMENTS
 
 if [ "$(id -u)" -eq 0 ]
 then
@@ -82,7 +84,7 @@ usage() {
 	  -b		set the Paper build; needs -u (optional)
 	  -g		get build of current Paper jar; assumes build json is present
 	  -n		set name for Paper jar
-	  -o		set output location for download
+	  -o		set output location for download; defaults to current directory
 	  -v		display script version
 
 EOF
