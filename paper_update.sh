@@ -11,6 +11,10 @@
 #
 #====================================================
 
+
+#TODO
+# ERROR HANDLING. check every exit for error handling
+
 if [ "$(id -u)" -eq 0 ]
 then
 	echo "do not run this script as root"
@@ -41,7 +45,12 @@ check_reqs() {
 	done
 }
 
-parse() {
+update() {
+	if [ ! -f "${paper_versions}" ]
+	then
+		curl -sX GET "${paper_api}/projects/paper/" | jq . > paper_versions.json
+	fi
+
 	if $no_ver_set && [ ! -f "${paper_builds}" ]
 	then
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
@@ -53,19 +62,10 @@ parse() {
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
 		latest_build="$(< paper_builds.json jq -r '.builds[-1]')"
 		download_url="${paper_api}/projects/paper/versions/${paper_ver}/builds/${latest_build}/downloads/paper-${paper_ver}-${latest_build}.jar"
+		echo "Downloading Paper ${paper_ver} build ${latest_build}"
 		curl -o "${paper_path}/${paper_jar}" -L "${download_url}"
 	fi
 
-}
-
-update() {
-	if [ -f "${paper_versions}" ]
-	then
-		parse
-	else
-		curl -sX GET "${paper_api}/projects/paper/" | jq . > paper_versions.json
-		parse
-	fi
 }
 
 usage() {
@@ -144,6 +144,7 @@ then
 	paper_path=.
 	no_ver_set=true
 	update
+	exit 0
 fi
 
 # this won't work as is. fix
