@@ -180,12 +180,13 @@ valid_build_f() {
 # the magic happens here
 update() {
 	get_ver_json
-	get_build_json
 
 	if $no_ver_set
 	then
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
 	fi
+
+	get_build_json
 
 	# if '-b' is omitted, find newest build for given version (or newest version if '-u' is omitted)
 	if ! $b_flag
