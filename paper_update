@@ -23,6 +23,7 @@
 # DONE - get current paper jar build
 # SOMEWHAT DONE - dont overwrite current file. mv to paper-old.jar. if shasum is the same, exit
 # refresh jsons depending on age
+# determine version and build without knowing version
 # script update checker
 
 if [ "$(id -u)" -eq 0 ]
@@ -194,6 +195,8 @@ update() {
 # I don't think there's a better way.
 # Compares SHA256 with all builds supplied by API then matches if found. Prints resulting build number.
 cur_build() {
+	valid_ver
+
 	if ! $g_flag
 	then
 		return
@@ -277,6 +280,7 @@ version() {
 	exit 0
 }
 
+# there are some spaces mixed here so bash outputs formatting as expected
 usage() {
 	cat <<-EOF
 	Usage: ${prog_name} [OPTIONS...]
@@ -303,7 +307,7 @@ usage() {
 	  -L		list last five Paper builds; requires -u
 	  -f		overwrite existing Paper jar
 	  -F		force download new Paper version and build jsons from API
-	  		this is to reduce API requests. Supply -F to update build list often
+	 	 	this is to reduce API requests. Supply -F to update build list often
 
 	  -v		display version
 
