@@ -4,6 +4,7 @@ A set of shell scripts for managing and updating a PaperMC server.
 Currently only the updater is done and functional.
 
 **I'm by no means a guru at this, so please report any flaws and provide suggestions. Thanks**
+**Guarantee you'll find a bug or something broken, an oversight, etc. I'm still learning to write software and scripts.**
 
 # YAPManTool Updater -- paper_update.sh
 Updates Paper using supplied version and build information via the PaperMC API v2
