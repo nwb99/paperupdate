@@ -8,7 +8,8 @@ Currently only the updater is done and functional.
 # YAPManTool Updater -- paper_update.sh
 Updates Paper using supplied version and build information via the PaperMC API v2
 
-Requires: bash, curl, wget, jq, and GNU coreutils
+Requires: bash, curl, wget, jq, and GNU coreutils.
+
 Only tested on Linux. This script will only work 100% correctly in bash.
 
 Note: This does not check if Paper is running and will overwrite your Paper JAR if you allow it. This will be fixed later.
