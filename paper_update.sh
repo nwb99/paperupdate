@@ -311,6 +311,7 @@ do
 			b_flag=true
 			;;
 		n)
+			if ! $u_flag; then no_ver_set=true; fi
 		 	paper_jar="${OPTARG}"
 			if [ "${paper_jar##*.}" != "jar" ]
 			then
@@ -318,6 +319,7 @@ do
 			fi
 			;;
 		o)
+			if ! $u_flag; then no_ver_set=true; fi
 			paper_path=$(realpath -s -m "${OPTARG/#\~/$HOME}")
 			;;
 		g)
