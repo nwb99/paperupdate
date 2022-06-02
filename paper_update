@@ -100,6 +100,23 @@ shasum_f() {
 	fi
 }
 
+get_ver_json() {
+	# retrieve list of Paper versions if local json is missing or '-F' is supplied
+	if [ ! -f "${paper_versions}" ] || $force_new_json
+	then
+		# curl --fail flag isn't foolproof but is probably good enough. 301 redirect, for example returns 0.
+		curl --fail -sX GET "${paper_api}/projects/paper/" | jq . > "${paper_versions}"
+		if [ ! "${PIPESTATUS[0]}" -eq 0 ]	# not portable
+		then
+			if [ ! -s "${paper_versions}" ]
+			then
+				rm -f "${paper_versions}"	# I want to avoid rm if possible. There's likely a more elegant way.
+			fi
+			error_msg "curl: API error"
+		fi
+	fi
+}
+
 # verifies that version supplied with '-u' is available
 valid_ver() {
 	readarray -t versions < <(< ${paper_versions} jq -r '.versions[]')
@@ -124,20 +141,8 @@ valid_ver() {
 
 # the magic happens here
 update() {
-	# retrieve list of Paper versions if local json is missing or '-F' is supplied
-	if [ ! -f "${paper_versions}" ] || $force_new_json
-	then
-		# curl --fail flag isn't foolproof but is probably good enough. 301 redirect, for example returns 0.
-		curl --fail -sX GET "${paper_api}/projects/paper/" | jq . > "${paper_versions}"
-		if [ ! "${PIPESTATUS[0]}" -eq 0 ]	# not portable
-		then
-			if [ ! -s "${paper_versions}" ]
-			then
-				rm -f "${paper_versions}"	# I want to avoid rm if possible. There's likely a more elegant way.
-			fi
-			error_msg "curl: API error"
-		fi
-	fi
+	get_ver_json
+	valid_ver
 
 	# if '-u' is ommitted, find newest version and its builds. '-F' again updates json
 	if ( $no_ver_set && [ ! -f "${paper_builds}" ] ) || ( $no_ver_set && $force_new_json )
@@ -184,8 +189,6 @@ update() {
 		error_msg "file "${paper_path}/${paper_jar}" already exists.\nUse option '-f' to force download."
 	fi
 
-	valid_ver
-
 	download_url="${paper_api}/projects/paper/versions/${paper_ver}/builds/${build}/downloads/paper-${paper_ver}-${build}.jar"
 	echo "Downloading Paper ${paper_ver} build ${build} to \"${paper_path}/${paper_jar}\""
 	curl --create-dirs -o "${paper_path}/${paper_jar}" -L "${download_url}"
@@ -195,8 +198,6 @@ update() {
 # I don't think there's a better way.
 # Compares SHA256 with all builds supplied by API then matches if found. Prints resulting build number.
 cur_build() {
-	valid_ver
-
 	if ! $g_flag
 	then
 		return
@@ -206,6 +207,9 @@ cur_build() {
 	then
 		error_msg "${paper_jar}: no such file"
 	fi
+
+	get_ver_json
+	valid_ver
 
 	curl -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq . > "${paper_builds_ext}"
 	total_builds="$(( $(< ${paper_builds_ext} jq -r '.builds[].build' | wc -l) - 1 ))"
@@ -281,6 +285,7 @@ version() {
 }
 
 # there are some spaces mixed here so bash outputs formatting as expected
+# first two are tabs, next two are spaces, thereafter tabs.
 usage() {
 	cat <<-EOF
 	Usage: ${prog_name} [OPTIONS...]
