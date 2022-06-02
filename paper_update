@@ -139,15 +139,37 @@ valid_ver() {
 	fi
 }
 
+valid_build_f() {
+	readarray -t builds < <(< ${paper_builds} jq -r '.builds[]')
+
+	for i in "${builds[@]}"
+	do
+		if [ "${i}" != "${build}" ]
+		then
+			valid_build=false
+			continue
+		else
+			valid_build=true
+			break
+		fi
+	done
+
+	if ! $valid_build
+	then
+		error_msg "${paper_ver}: build ${paper_build}: not a valid Paper build"
+	fi
+
+}
+
 # the magic happens here
 update() {
 	get_ver_json
-	valid_ver
 
 	# if '-u' is ommitted, find newest version and its builds. '-F' again updates json
 	if ( $no_ver_set && [ ! -f "${paper_builds}" ] ) || ( $no_ver_set && $force_new_json )
 	then
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
+		valid_ver
 		curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/" | jq . > "${paper_builds}"
 		if [ ! "${PIPESTATUS[0]}" -eq 0 ]
 		then
@@ -164,6 +186,7 @@ update() {
 	if $no_ver_set
 	then
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
+		valid_ver
 	fi
 
 	# if '-b' is omitted, find newest build for given version (or newest version if '-u' is omitted)
@@ -181,6 +204,7 @@ update() {
 		build="$(< ${paper_builds} jq -r '.builds[-1]')"
 	else
 	 	build="${paper_build}"
+		valid_build_f
 	fi
 
 	# check if exists and if '-f' force is supplied. Download JAR.
