@@ -5,7 +5,7 @@
 # (c) 2022 Nathan "nwb99" Barnett, see LICENSE
 # version 0.1
 #
-#
+# requires bash (likely old v3 won't work.)
 #
 #
 #
@@ -13,14 +13,14 @@
 
 
 #TODO
-# ERROR HANDLING. check every exit for error handling
+# SOMEWHAT DONE - ERROR HANDLING. check every exit for error handling
 # LOGGING
 # COMMENTS
-# LIST RECENT BUILDS/VERSIONS W/ CHANGELOGS
+# DONE -LIST RECENT BUILDS/VERSIONS W/ CHANGELOGS
 # check if Paper is running
 # DONE - shasum
-# get current paper jar build
-# dont overwrite current file. mv to paper-old.jar. if shasum is the same, exit
+# DONE - get current paper jar build
+# SOMEWHAT DONE - dont overwrite current file. mv to paper-old.jar. if shasum is the same, exit
 # script update checker
 
 if [ "$(id -u)" -eq 0 ]
@@ -43,7 +43,7 @@ formal_name="YAPManTool Updater"
 
 script_ver="0.1"
 
-
+# default flags which are changed by getopts
 u_flag=false
 b_flag=false
 g_flag=false
@@ -52,20 +52,23 @@ no_ver_set=false
 force_new_json=false
 
 
+# generic error message template
 error_msg() {
 	echo -e "${prog_name}: ${1}" >&2
 	exit 1
 }
 
+# is used in conjunction with error_msg()
 error_option() {
 	echo -e "option -- '${1}' requires '${2}'"
 }
 
+# also needs sha256sum, but that should be in GNU coreutils
 check_reqs() {
 	req_progs=(curl jq wget)
 	for prog in "${req_progs[@]}"
 	do
-		if ! command -v "${prog}" > /dev/null 2>&1
+		if ! command -v "${prog}" > /dev/null 2>&1		# check if program in list exists in PATH on system
 		then
 			error_msg "missing program '${prog}'\nThis script requires the following programs (and GNU coreutils): ${req_progs[*]}"
 		fi
@@ -93,6 +96,7 @@ shasum_f() {
 	fi
 }
 
+# verifies that version supplied with '-u' is available
 valid_ver() {
 	readarray -t versions < <(< ${paper_versions} jq '.versions[]')
 
@@ -113,12 +117,14 @@ valid_ver() {
 	fi
 }
 
+# the magic happens here
 update() {
+	# retrieve list of Paper versions if local json is missing or '-F' is supplied
 	if [ ! -f "${paper_versions}" ] || $force_new_json
 	then
 		# curl --fail flag isn't foolproof but is probably good enough. 301 redirect, for example returns 0.
 		curl --fail -sX GET "${paper_api}/projects/paper/" | jq . > "${paper_versions}"
-		if [ ! "${PIPESTATUS[0]}" -eq 0 ]
+		if [ ! "${PIPESTATUS[0]}" -eq 0 ]	# not portable
 		then
 			if [ ! -s "${paper_versions}" ]
 			then
@@ -128,6 +134,7 @@ update() {
 		fi
 	fi
 
+	# if '-u' is ommitted, find newest version and its builds. '-F' again updates json
 	if ( $no_ver_set && [ ! -f "${paper_builds}" ] ) || ( $no_ver_set && $force_new_json )
 	then
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
@@ -142,6 +149,8 @@ update() {
 		fi
 	fi
 
+	# if '-u' is ommitted, jsons are present, and no '-F'
+	# this is mostly to reduce requests to the API.
 	if $no_ver_set
 	then
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
@@ -255,13 +264,14 @@ usage() {
 	  -h		displays this help
 	  -u		set the Paper version
 	  -b		set the Paper build; requires -u (optional)
-	  -g		get build of current Paper jar; requires -u. -o and -n is optional
+	  -g		get build of current Paper jar; requires -u. -o and -n are optional
 	  -n		set name for Paper jar; defaults to "paper.jar"
 	  -o		set output location for download; defaults to current directory
 	  -l		list Paper versions
 	  -L		list last five Paper builds; requires -u
 	  -f		overwrite existing Paper jar
 	  -F		force download new Paper version and build jsons from API
+	  			this is to reduce API requests. Supply -F to update often
 	  -v		display script version
 
 EOF
@@ -316,6 +326,7 @@ do
 			;;
 		F)
 			if $g_flag; then error_msg "option -- 'g' is exclusive"; fi
+			if ! $u_flag; then no_ver_set=true; fi
 			force_new_json=true
 			;;
 		\?)
