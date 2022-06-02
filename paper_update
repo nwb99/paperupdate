@@ -117,6 +117,21 @@ get_ver_json() {
 	fi
 }
 
+get_build_json() {
+	if [ ! -f "${paper_builds}" ] || $force_new_json
+	then
+		curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/" | jq . > "${paper_builds}"
+		if [ ! "${PIPESTATUS[0]}" -eq 0 ]
+		then
+			if [ ! -s "${paper_builds}" ]
+			then
+				rm -f "${paper_builds}"
+			fi
+			error_msg "curl: API error"
+		fi
+	fi
+}
+
 # verifies that version supplied with '-u' is available
 valid_ver() {
 	readarray -t versions < <(< ${paper_versions} jq -r '.versions[]')
@@ -140,7 +155,8 @@ valid_ver() {
 }
 
 valid_build_f() {
-	readarray -t builds < <(< ${paper_builds} jq -r '.builds[]')
+	# count backwards since wanted build may be newer
+	readarray -t builds < <(< ${paper_builds} jq -r '.builds[]' | tac)
 
 	for i in "${builds[@]}"
 	do
@@ -164,29 +180,11 @@ valid_build_f() {
 # the magic happens here
 update() {
 	get_ver_json
+	get_build_json
 
-	# if '-u' is ommitted, find newest version and its builds. '-F' again updates json
-	if ( $no_ver_set && [ ! -f "${paper_builds}" ] ) || ( $no_ver_set && $force_new_json )
-	then
-		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
-		valid_ver
-		curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/" | jq . > "${paper_builds}"
-		if [ ! "${PIPESTATUS[0]}" -eq 0 ]
-		then
-			if [ ! -s "${paper_builds}" ]
-			then
-				rm -f "${paper_builds}"
-			fi
-			error_msg "curl: API error"
-		fi
-	fi
-
-	# if '-u' is omitted, jsons are present, and no '-F'
-	# this is mostly to reduce requests to the API.
 	if $no_ver_set
 	then
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
-		valid_ver
 	fi
 
 	# if '-b' is omitted, find newest build for given version (or newest version if '-u' is omitted)
@@ -234,6 +232,7 @@ cur_build() {
 
 	get_ver_json
 	valid_ver
+	get_build_json
 
 	curl -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq . > "${paper_builds_ext}"
 	total_builds="$(( $(< ${paper_builds_ext} jq -r '.builds[].build' | wc -l) - 1 ))"
