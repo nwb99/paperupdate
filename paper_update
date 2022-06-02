@@ -22,6 +22,7 @@
 # DONE - shasum
 # DONE - get current paper jar build
 # SOMEWHAT DONE - dont overwrite current file. mv to paper-old.jar. if shasum is the same, exit
+# refresh jsons depending on age
 # script update checker
 
 if [ "$(id -u)" -eq 0 ]
@@ -106,6 +107,7 @@ valid_ver() {
 	do
 		if [ "${i}" != "${paper_ver}" ]
 		then
+			valid_version=false
 			continue
 		else
 			valid_version=true
@@ -180,6 +182,9 @@ update() {
 	then
 		error_msg "file "${paper_path}/${paper_jar}" already exists.\nUse option '-f' to force download."
 	fi
+
+	valid_ver
+
 	download_url="${paper_api}/projects/paper/versions/${paper_ver}/builds/${build}/downloads/paper-${paper_ver}-${build}.jar"
 	echo "Downloading Paper ${paper_ver} build ${build} to \"${paper_path}/${paper_jar}\""
 	curl --create-dirs -o "${paper_path}/${paper_jar}" -L "${download_url}"
