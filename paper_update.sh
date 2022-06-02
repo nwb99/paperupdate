@@ -7,8 +7,9 @@
 #
 # requires bash (likely old v3 won't work.)
 #
-#
-#
+# most of the time the API response is cached locally
+# to reduce API requests. This can usually be
+# overridden with '-F'
 #====================================================
 
 
@@ -36,7 +37,6 @@ paper_api="https://papermc.io/api/v2"
 paper_builds="paper_builds.json"
 paper_builds_ext="paper_builds_ext.json"
 paper_versions="paper_versions.json"
-download_url="${paper_api}/projects/paper/versions/${paper_ver}/builds/${build}/downloads/paper-${paper_ver}-${build}.jar"
 
 prog_name="$(basename "${0}")"
 formal_name="YAPManTool Updater"
@@ -149,13 +149,14 @@ update() {
 		fi
 	fi
 
-	# if '-u' is ommitted, jsons are present, and no '-F'
+	# if '-u' is omitted, jsons are present, and no '-F'
 	# this is mostly to reduce requests to the API.
 	if $no_ver_set
 	then
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
 	fi
 
+	# if '-b' is omitted, find newest build for given version (or newest version if '-u' is omitted)
 	if ! $b_flag
 	then
 		curl -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/" | jq . > "${paper_builds}"
@@ -172,6 +173,7 @@ update() {
 	 	build="${paper_build}"
 	fi
 
+	# check if exists and if '-f' force is supplied. Download JAR.
 	if [ -s "${paper_path}/${paper_jar}" ] && ! $f_flag
 	then
 		error_msg "file "${paper_path}/${paper_jar}" already exists.\nUse option '-f' to force download."
@@ -182,6 +184,8 @@ update() {
 	shasum_f
 }
 
+# I don't think there's a better way.
+# Compares SHA256 with all builds supplied by API then matches if found. Prints resulting build number.
 cur_build() {
 	if [ ! -f "${paper_path}/${paper_jar}" ]
 	then
@@ -233,6 +237,7 @@ list_builds() {
 	local build
 
 	echo -e "Paper ${paper_ver} (5 most recent builds)\n---------------"
+	# -1, -2, -3, -4, -5... (in this order since -1 is newest). jq can iterate in reverse
 	for (( i=-1; i>=-5; --i ))
 	do
 		build="$(< "${paper_builds_ext}" jq -r ".builds[$i].build")"
@@ -271,7 +276,8 @@ usage() {
 	  -L		list last five Paper builds; requires -u
 	  -f		overwrite existing Paper jar
 	  -F		force download new Paper version and build jsons from API
-	  			this is to reduce API requests. Supply -F to update often
+	  		this is to reduce API requests. Supply -F to update build list often
+
 	  -v		display script version
 
 EOF
@@ -339,6 +345,7 @@ do
 done
 shift $((OPTIND - 1))
 
+# no args
 if [ ${OPTIND} -eq 1 ]
 then
 	no_ver_set=true
