@@ -101,7 +101,7 @@ shasum_f() {
 
 # verifies that version supplied with '-u' is available
 valid_ver() {
-	readarray -t versions < <(< ${paper_versions} jq '.versions[]')
+	readarray -t versions < <(< ${paper_versions} jq -r '.versions[]')
 
 	for i in "${versions[@]}"
 	do
