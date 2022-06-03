@@ -101,6 +101,11 @@ shasum_f() {
 }
 
 get_ver_json() {
+	if $force_new_json
+	then
+		echo -e "Force download new versions list.\n"
+	fi
+
 	# retrieve list of Paper versions if local json is missing or '-F' is supplied
 	if [ ! -f "${paper_versions}" ] || $force_new_json
 	then
@@ -118,6 +123,11 @@ get_ver_json() {
 }
 
 get_build_json() {
+	if $force_new_json
+	then
+		echo -e "Force download new builds list.\n"
+	fi
+
 	if [ ! -f "${paper_builds}" ] || $force_new_json
 	then
 		curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/" | jq . > "${paper_builds}"
@@ -268,8 +278,14 @@ list_versions() {
 	then
 		error_msg "curl: API error"
 	else
+		if $force_new_json
+		then
+		    echo -e "\nNote: option '-F' not necessary."
+		fi
+
 		exit 0
 	fi
+
 }
 
 list_builds() {
