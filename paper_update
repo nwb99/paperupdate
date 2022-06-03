@@ -3,7 +3,7 @@
 #====================================================
 # YAPManTool Updater
 # (c) 2022 Nathan "nwb99" Barnett, see LICENSE
-# version 0.2dev
+# version 0.2
 #
 # requires bash (likely old v3 won't work.)
 #
@@ -43,7 +43,7 @@ paper_versions="paper_versions.json"
 prog_name="$(basename "${0}")"
 formal_name="YAPManTool Updater"
 
-script_ver="0.2dev"
+script_ver="0.2"
 
 # default flags which are changed by getopts
 u_flag=false
