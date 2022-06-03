@@ -3,7 +3,7 @@
 #====================================================
 # YAPManTool Updater
 # (c) 2022 Nathan "nwb99" Barnett, see LICENSE
-# version 0.1
+# version 0.2
 #
 # requires bash (likely old v3 won't work.)
 #
@@ -22,6 +22,8 @@
 # DONE - shasum
 # DONE - get current paper jar build
 # SOMEWHAT DONE - dont overwrite current file. mv to paper-old.jar. if shasum is the same, exit
+# refresh jsons depending on age
+# determine version and build without knowing version
 # script update checker
 
 if [ "$(id -u)" -eq 0 ]
@@ -41,13 +43,15 @@ paper_versions="paper_versions.json"
 prog_name="$(basename "${0}")"
 formal_name="YAPManTool Updater"
 
-script_ver="0.1"
+script_ver="0.2"
 
 # default flags which are changed by getopts
 u_flag=false
 b_flag=false
 g_flag=false
 f_flag=false
+l_flag=false
+L_flag=false
 no_ver_set=false
 force_new_json=false
 
@@ -63,6 +67,14 @@ error_option() {
 	echo -e "option -- '${1}' requires '${2}'"
 }
 
+check_net() {
+	# probably eliminate wget later
+	if ! eval "wget -q --spider https://papermc.io"
+	then
+		error_msg "Could not ping papermc.io\nCheck your network connection."
+	fi
+}
+
 # also needs sha256sum, but that should be in GNU coreutils
 check_reqs() {
 	req_progs=(curl jq wget)
@@ -70,17 +82,9 @@ check_reqs() {
 	do
 		if ! command -v "${prog}" > /dev/null 2>&1		# check if program in list exists in PATH on system
 		then
-			error_msg "missing program '${prog}'\nThis script requires the following programs (and GNU coreutils): ${req_progs[*]}"
+			error_msg "missing program '${prog}'\nThis utility requires the following programs (and GNU coreutils): ${req_progs[*]}"
 		fi
 	done
-}
-
-check_net() {
-	# probably eliminate wget later
-	if ! eval "wget -q --spider https://papermc.io"
-	then
-		error_msg "Could not ping papermc.io\nCheck your network connection."
-	fi
 }
 
 shasum_f() {
@@ -96,29 +100,12 @@ shasum_f() {
 	fi
 }
 
-# verifies that version supplied with '-u' is available
-valid_ver() {
-	readarray -t versions < <(< ${paper_versions} jq '.versions[]')
-
-	for i in "${versions[@]}"
-	do
-		if [ "${i}" != "${paper_ver}" ]
-		then
-			continue
-		else
-			valid_version=true
-			break
-		fi
-	done
-
-	if ! $valid_version
+get_ver_json() {
+	if $force_new_json
 	then
-		error_msg "${paper_ver}: not a valid Paper version"
+		echo -e "Force download new versions list.\n"
 	fi
-}
 
-# the magic happens here
-update() {
 	# retrieve list of Paper versions if local json is missing or '-F' is supplied
 	if [ ! -f "${paper_versions}" ] || $force_new_json
 	then
@@ -133,11 +120,16 @@ update() {
 			error_msg "curl: API error"
 		fi
 	fi
+}
 
-	# if '-u' is ommitted, find newest version and its builds. '-F' again updates json
-	if ( $no_ver_set && [ ! -f "${paper_builds}" ] ) || ( $no_ver_set && $force_new_json )
+get_build_json() {
+	if $force_new_json
 	then
-		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
+		echo -e "Force download new builds list.\n"
+	fi
+
+	if [ ! -f "${paper_builds}" ] || $force_new_json
+	then
 		curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/" | jq . > "${paper_builds}"
 		if [ ! "${PIPESTATUS[0]}" -eq 0 ]
 		then
@@ -148,13 +140,64 @@ update() {
 			error_msg "curl: API error"
 		fi
 	fi
+}
 
-	# if '-u' is omitted, jsons are present, and no '-F'
-	# this is mostly to reduce requests to the API.
+# verifies that version supplied with '-u' is available
+valid_ver() {
+	readarray -t versions < <(< ${paper_versions} jq -r '.versions[]')
+
+	for i in "${versions[@]}"
+	do
+		if [ "${i}" != "${paper_ver}" ]
+		then
+			valid_version=false
+			continue
+		else
+			valid_version=true
+			break
+		fi
+	done
+
+	if ! $valid_version
+	then
+		error_msg "${paper_ver}: not a valid Paper version"
+	fi
+}
+
+valid_build_f() {
+	# count backwards since wanted build may be newer
+	readarray -t builds < <(< ${paper_builds} jq -r '.builds[]' | tac)
+
+	for i in "${builds[@]}"
+	do
+		if [ "${i}" != "${build}" ]
+		then
+			valid_build=false
+			continue
+		else
+			valid_build=true
+			break
+		fi
+	done
+
+	if ! $valid_build
+	then
+		error_msg "${paper_ver}: build ${paper_build}: not a valid Paper build"
+	fi
+
+}
+
+# the magic happens here
+update() {
+	get_ver_json
+
 	if $no_ver_set
 	then
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
 	fi
+
+	valid_ver
+	get_build_json
 
 	# if '-b' is omitted, find newest build for given version (or newest version if '-u' is omitted)
 	if ! $b_flag
@@ -171,6 +214,7 @@ update() {
 		build="$(< ${paper_builds} jq -r '.builds[-1]')"
 	else
 	 	build="${paper_build}"
+		valid_build_f
 	fi
 
 	# check if exists and if '-f' force is supplied. Download JAR.
@@ -178,6 +222,7 @@ update() {
 	then
 		error_msg "file "${paper_path}/${paper_jar}" already exists.\nUse option '-f' to force download."
 	fi
+
 	download_url="${paper_api}/projects/paper/versions/${paper_ver}/builds/${build}/downloads/paper-${paper_ver}-${build}.jar"
 	echo "Downloading Paper ${paper_ver} build ${build} to \"${paper_path}/${paper_jar}\""
 	curl --create-dirs -o "${paper_path}/${paper_jar}" -L "${download_url}"
@@ -187,10 +232,19 @@ update() {
 # I don't think there's a better way.
 # Compares SHA256 with all builds supplied by API then matches if found. Prints resulting build number.
 cur_build() {
+	if ! $g_flag
+	then
+		return
+	fi
+
 	if [ ! -f "${paper_path}/${paper_jar}" ]
 	then
 		error_msg "${paper_jar}: no such file"
 	fi
+
+	get_ver_json
+	valid_ver
+	get_build_json
 
 	curl -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq . > "${paper_builds_ext}"
 	total_builds="$(( $(< ${paper_builds_ext} jq -r '.builds[].build' | wc -l) - 1 ))"
@@ -214,16 +268,38 @@ cur_build() {
 }
 
 list_versions() {
+	if ! $l_flag
+	then
+		return
+	fi
+
 	curl --fail -sX GET "${paper_api}/projects/paper/" | jq -r '.versions[]'
 	if [ ! "${PIPESTATUS[0]}" -eq 0 ]
 	then
 		error_msg "curl: API error"
 	else
+		if $force_new_json
+		then
+		    echo -e "\nNote: option '-F' not necessary."
+		fi
+
 		exit 0
 	fi
+
 }
 
 list_builds() {
+	if ! $L_flag
+	then
+		return
+	fi
+
+	if $no_ver_set
+	then
+		get_ver_json
+		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
+	fi
+
 	curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq -r . > "${paper_builds_ext}"
 	if [ ! "${PIPESTATUS[0]}" -eq 0 ]
 	then
@@ -250,13 +326,20 @@ list_builds() {
 	exit 0
 }
 
+version() {
+	echo "${formal_name} version ${script_ver}"
+	exit 0
+}
+
+# there are some spaces mixed here so bash outputs formatting as expected
+# first two are tabs, next two are spaces, thereafter tabs.
 usage() {
 	cat <<-EOF
 	Usage: ${prog_name} [OPTIONS...]
 	${formal_name} uses the PaperMC API to obtain build information
 	and download requested version and build.
 	
-	Required files are stored in same directory as script.
+	Required files are stored in same directory as program.
 	Options required by another must precede.
 
 	Examples:
@@ -273,12 +356,12 @@ usage() {
 	  -n		set name for Paper jar; defaults to "paper.jar"
 	  -o		set output location for download; defaults to current directory
 	  -l		list Paper versions
-	  -L		list last five Paper builds; requires -u
+	  -L		list last five Paper builds; without -u, defaults to newest version
 	  -f		overwrite existing Paper jar
 	  -F		force download new Paper version and build jsons from API
-	  		this is to reduce API requests. Supply -F to update build list often
+	 	 	this is to reduce API requests. Supply -F to update build list often
 
-	  -v		display script version
+	  -v		display version
 
 EOF
 exit 0
@@ -288,8 +371,7 @@ while getopts ":vhu:b:gn:o:lLfF" opt
 do
 	case ${opt} in
 		v)
-			echo "${formal_name} version ${script_ver}"
-			exit 0
+		 	version
 			;;
 		h)
 			usage
@@ -299,11 +381,10 @@ do
 			u_flag=true
 			;;
 		l)
-			list_versions
+			l_flag=true
 			;;
 		L)
-			if ! $u_flag; then error_msg "$(error_option "L" "-u")"; fi
-			list_builds
+			L_flag=true
 			;;
 		b)
 			if ! $u_flag; then error_msg "$(error_option "b" "-u")"; fi
@@ -325,7 +406,6 @@ do
 		g)
 			if ! $u_flag; then error_msg "$(error_option "g" "-u")"; fi
 			g_flag=true
-			cur_build
 			;;
 		f)
 			if $g_flag; then error_msg "option -- 'g' is exclusive"; fi
@@ -348,11 +428,14 @@ done
 shift $((OPTIND - 1))
 
 # no args
-if [ ${OPTIND} -eq 1 ]
+if [ ${OPTIND} -eq 1 ] || ! $u_flag
 then
 	no_ver_set=true
 fi
 
 check_net
 check_reqs
+cur_build
+list_versions
+list_builds
 update

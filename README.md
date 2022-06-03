@@ -20,7 +20,7 @@ What can YAPManTool Updater do?
 - download a specific version and build via the API or the newest by default if no options are supplied
 - verifies download is not corrupted by comparing SHA256 of local copy with the API, it will show an error otherwise (will not delete corrupt JAR automatically)
 - list available Paper versions that can be obtained via the API
-- list the five most recent Paper builds (for a given version) with respective commit hash and changes summary, just as listed on papermc.io
+- list the five most recent Paper builds (defaults to newest if -u is omitted) with respective commit hash and changes summary, just as listed on papermc.io
 - find build number (assuming you know the version) for a given JAR by comparing SHA256 hashes with the API
 
 ![help dialog](doc/help.png)
