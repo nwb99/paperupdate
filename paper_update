@@ -186,6 +186,7 @@ update() {
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
 	fi
 
+	valid_ver
 	get_build_json
 
 	# if '-b' is omitted, find newest build for given version (or newest version if '-u' is omitted)
