@@ -278,6 +278,12 @@ list_builds() {
 		return
 	fi
 
+	if $no_ver_set
+	then
+		get_ver_json
+		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
+	fi
+
 	curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq -r . > "${paper_builds_ext}"
 	if [ ! "${PIPESTATUS[0]}" -eq 0 ]
 	then
@@ -334,7 +340,7 @@ usage() {
 	  -n		set name for Paper jar; defaults to "paper.jar"
 	  -o		set output location for download; defaults to current directory
 	  -l		list Paper versions
-	  -L		list last five Paper builds; requires -u
+	  -L		list last five Paper builds; without -u, defaults to newest version
 	  -f		overwrite existing Paper jar
 	  -F		force download new Paper version and build jsons from API
 	 	 	this is to reduce API requests. Supply -F to update build list often
@@ -362,7 +368,6 @@ do
 			l_flag=true
 			;;
 		L)
-			if ! $u_flag; then error_msg "$(error_option "L" "-u")"; fi
 			L_flag=true
 			;;
 		b)
@@ -407,7 +412,7 @@ done
 shift $((OPTIND - 1))
 
 # no args
-if [ ${OPTIND} -eq 1 ]
+if [ ${OPTIND} -eq 1 ] || ! $u_flag
 then
 	no_ver_set=true
 fi
