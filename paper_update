@@ -3,7 +3,7 @@
 #==========================================================
 # YAPManTool Updater
 # (c) 2022 Nathan "nwb99" Barnett, see LICENSE
-# version 0.4
+# version 0.4.1
 #
 # requires bash (likely old v3 won't work.)
 # on macOS, recommended to install newer bash using brew
@@ -55,7 +55,7 @@ paper_versions="${tmp_dir}/paper_versions.json"
 prog_name="$(basename "${0}")"
 formal_name="YAPManTool Updater"
 
-script_ver="0.4"
+script_ver="0.4.1"
 
 # default flags which are changed by getopts
 u_flag=false
@@ -424,11 +424,12 @@ usage() {
 	Options required by another must precede.
 
 	Examples:
-	  ./${prog_name}		no options downloads newest version and newest build
+	  ./${prog_name}	downloads newest version and newest stable build
+	                             (if available, else will quit with error)
 
-	  ./${prog_name} -u 1.12.2		omitted build number defaults to newest
+	  ./${prog_name} -u 1.12.2	omitted build number defaults to newest
 
-	  ./${prog_name} -u 1.16.5 -b 793 -n "paper-793.jar" -o "~/paper" -F
+	  ./${prog_name} -u 1.16.5 -b 793 -n "paper-793.jar" -o "~/paper"
 
 	  -h		displays this help
 	  -u		set the Paper version
@@ -437,9 +438,11 @@ usage() {
 	  -n		set name for Paper jar; defaults to "paper.jar"
 	  -o		set output location for download; defaults to current directory
 	  -l		list Paper versions
-	  -L		list last five Paper builds; without -u, defaults to newest version
+
+	  -L		list last five Paper builds; 
+	                 without -u, defaults to newest version
+
 	  -f		overwrite existing Paper jar
-	  
 	  -E		'experimental' builds only
 
 	  -v		display version
