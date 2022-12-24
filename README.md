@@ -27,7 +27,6 @@ What can YAPManTool Updater do?
 
 ![help dialog](doc/help.png)
 ![downloading without any options](doc/dl_no_args.png)
-![version list](doc/version_list.png)
 ![build list and info](doc/build_info.png)
 ![build list and info experimental](doc/build_info_e.png)
 ![build list and info selected version](doc/build_info_v.png)
