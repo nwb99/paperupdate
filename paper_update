@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 
-#====================================================
+#==========================================================
 # YAPManTool Updater
 # (c) 2022 Nathan "nwb99" Barnett, see LICENSE
-# version 0.2
+# version 0.4
 #
 # requires bash (likely old v3 won't work.)
+# on macOS, recommended to install newer bash using brew
 #
-# most of the time the API response is cached locally
-# to reduce API requests. This can usually be
-# overridden with '-F'
-#====================================================
+# should this be done in Python? Probably.
+#==========================================================
 
+# $paper_builds_ext is different depending on function.
+# When a function is selective of default/experimental, it is
+# extracting such builds to a new array with same file name.
 
 #TODO
 # SOMEWHAT DONE - ERROR HANDLING. check every exit for error handling
@@ -22,9 +24,10 @@
 # DONE - shasum
 # DONE - get current paper jar build
 # SOMEWHAT DONE - dont overwrite current file. mv to paper-old.jar. if shasum is the same, exit
-# refresh jsons depending on age
-# determine version and build without knowing version
+# DONE - determine version and build without knowing version
+# GNU Parallel to speed up version determination?
 # script update checker
+# catch interrupt ^C and cleanup
 
 if [ "$(id -u)" -eq 0 ]
 then
@@ -32,18 +35,27 @@ then
 	exit 1
 fi
 
+OS="$(uname -s)"
+
+if [ "${OS}" != "Linux" ] && [ "${OS}" != "Darwin" ]
+then
+	echo "This script is meant to run only on Linux or macOS."
+	exit 1
+fi
+
 
 paper_jar="paper.jar"
 paper_path="."
+tmp_dir="/tmp/paperupdate"
 paper_api="https://papermc.io/api/v2"
-paper_builds="paper_builds.json"
-paper_builds_ext="paper_builds_ext.json"
-paper_versions="paper_versions.json"
+paper_builds="${tmp_dir}/paper_builds.json"
+paper_builds_ext="${tmp_dir}/paper_builds_ext.json"
+paper_versions="${tmp_dir}/paper_versions.json"
 
 prog_name="$(basename "${0}")"
 formal_name="YAPManTool Updater"
 
-script_ver="0.2"
+script_ver="0.4"
 
 # default flags which are changed by getopts
 u_flag=false
@@ -52,19 +64,21 @@ g_flag=false
 f_flag=false
 l_flag=false
 L_flag=false
+E_flag=false
 no_ver_set=false
-force_new_json=false
+
+channel="default"
 
 
 # generic error message template
 error_msg() {
-	echo -e "${prog_name}: ${1}" >&2
+	echo -e "${prog_name}: ${1}\n" >&2
 	exit 1
 }
 
 # is used in conjunction with error_msg()
 error_option() {
-	echo -e "option -- '${1}' requires '${2}'"
+	echo -e "option -- '${1}' requires '${2}'\n"
 }
 
 check_net() {
@@ -87,8 +101,20 @@ check_reqs() {
 	done
 }
 
+check_tmp() {
+	if ! [ -d "${tmp_dir}" ]
+	then
+		mkdir -p "${tmp_dir}"
+	fi
+}
+
 shasum_f() {
-	sha256="$(sha256sum "${paper_path}/${paper_jar}" | cut -d ' ' -f1)"
+	if [ "${OS}" == "Darwin" ]
+	then
+		sha256="$(shasum -a256 "${paper_path}/${paper_jar}" | cut -d ' ' -f1)"
+	else	
+		sha256="$(sha256sum "${paper_path}/${paper_jar}" | cut -d ' ' -f1)"
+	fi
 	expected_sha256="$(curl -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/${build}" | jq -r '.downloads.application.sha256')"
 
 	if [ "${sha256}" != "${expected_sha256}" ]
@@ -101,45 +127,32 @@ shasum_f() {
 }
 
 get_ver_json() {
-	if $force_new_json
+	# curl --fail flag isn't foolproof but is probably good enough. 301 redirect, for example returns 0.
+	curl --fail -sX GET "${paper_api}/projects/paper/" | jq . > "${paper_versions}"
+	if [ ! "${PIPESTATUS[0]}" -eq 0 ]	# not portable
 	then
-		echo -e "Force download new versions list.\n"
+		if [ ! -s "${paper_versions}" ]
+		then
+			rm -f "${paper_versions}"	# I want to avoid rm if possible. There's likely a more elegant way.
+		fi
+		error_msg "curl: API error"
 	fi
 
-	# retrieve list of Paper versions if local json is missing or '-F' is supplied
-	if [ ! -f "${paper_versions}" ] || $force_new_json
-	then
-		# curl --fail flag isn't foolproof but is probably good enough. 301 redirect, for example returns 0.
-		curl --fail -sX GET "${paper_api}/projects/paper/" | jq . > "${paper_versions}"
-		if [ ! "${PIPESTATUS[0]}" -eq 0 ]	# not portable
-		then
-			if [ ! -s "${paper_versions}" ]
-			then
-				rm -f "${paper_versions}"	# I want to avoid rm if possible. There's likely a more elegant way.
-			fi
-			error_msg "curl: API error"
-		fi
-	fi
+	version_count="$(< "${paper_versions}" jq -r '.versions[]' | wc -l)"
 }
 
 get_build_json() {
-	if $force_new_json
+	curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/" | jq . > "${paper_builds}"
+	if [ ! "${PIPESTATUS[0]}" -eq 0 ]
 	then
-		echo -e "Force download new builds list.\n"
+		if [ ! -s "${paper_builds}" ]
+		then
+			rm -f "${paper_builds}"
+		fi
+		error_msg "curl: API error"
 	fi
 
-	if [ ! -f "${paper_builds}" ] || $force_new_json
-	then
-		curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/" | jq . > "${paper_builds}"
-		if [ ! "${PIPESTATUS[0]}" -eq 0 ]
-		then
-			if [ ! -s "${paper_builds}" ]
-			then
-				rm -f "${paper_builds}"
-			fi
-			error_msg "curl: API error"
-		fi
-	fi
+	build_count="$(< "${paper_builds}" jq -r '.builds[]' | wc -l)"
 }
 
 # verifies that version supplied with '-u' is available
@@ -184,7 +197,26 @@ valid_build_f() {
 	then
 		error_msg "${paper_ver}: build ${paper_build}: not a valid Paper build"
 	fi
+}
 
+get_build_count() {
+	if [ "$E_flag" == "true" ]
+	then
+		curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq '.builds | map(select(.channel=="experimental"))' > "${paper_builds_ext}"
+	else
+		curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq '.builds | map(select(.channel=="default"))' > "${paper_builds_ext}"
+	fi
+		
+	if [ ! "${PIPESTATUS[0]}" -eq 0 ]
+	then
+		if [ ! -s "${paper_builds}" ]
+		then
+			rm -f "${paper_builds}"
+		fi
+		error_msg "curl: API error"
+	fi
+
+	build_count=$(< "${paper_builds_ext}" jq -r '.[].build' | wc -l)
 }
 
 # the magic happens here
@@ -193,25 +225,24 @@ update() {
 
 	if $no_ver_set
 	then
-		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
+		paper_ver="$(< "${paper_versions}" jq -r '.versions[-1]')"
 	fi
 
 	valid_ver
-	get_build_json
+	get_build_count
+
+	if [ "${E_flag}" == "true" ] && [ "${build_count}" -lt 1 ]
+	then
+		error_msg "Paper version ${paper_ver} has no experimental builds available."
+	elif [ "${build_count}" -lt 1 ]
+	then
+		error_msg "Paper version ${paper_ver} has no builds available."
+	fi
 
 	# if '-b' is omitted, find newest build for given version (or newest version if '-u' is omitted)
 	if ! $b_flag
 	then
-		curl -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/" | jq . > "${paper_builds}"
-		if [ ! "${PIPESTATUS[0]}" -eq 0 ]
-		then
-			if [ ! -s "${paper_builds}" ]
-			then
-				rm -f "${paper_builds}"
-			fi
-			error_msg "curl: API error"
-		fi
-		build="$(< ${paper_builds} jq -r '.builds[-1]')"
+		build="$(< ${paper_builds_ext} jq -r '.[-1].build')"
 	else
 	 	build="${paper_build}"
 		valid_build_f
@@ -224,7 +255,14 @@ update() {
 	fi
 
 	download_url="${paper_api}/projects/paper/versions/${paper_ver}/builds/${build}/downloads/paper-${paper_ver}-${build}.jar"
-	echo "Downloading Paper ${paper_ver} build ${build} to \"${paper_path}/${paper_jar}\""
+
+	if [ "$E_flag" == "true" ]
+	then
+		echo "Downloading Paper ${paper_ver} experimental build ${build} to \"${paper_path}/${paper_jar}\""
+	else
+		echo "Downloading Paper ${paper_ver} stable build ${build} to \"${paper_path}/${paper_jar}\""
+	fi
+		
 	curl --create-dirs -o "${paper_path}/${paper_jar}" -L "${download_url}"
 	shasum_f
 }
@@ -242,29 +280,49 @@ cur_build() {
 		error_msg "${paper_jar}: no such file"
 	fi
 
+	if [ "${OS}" == "Darwin" ]
+	then
+		sha256="$(shasum -a256 "${paper_path}/${paper_jar}" | cut -d ' ' -f1)"
+	else	
+		sha256="$(sha256sum "${paper_path}/${paper_jar}" | cut -d ' ' -f1)"
+	fi
+
 	get_ver_json
-	valid_ver
-	get_build_json
+	
+	printf "%s\n" "This might take a while."
 
-	curl -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq . > "${paper_builds_ext}"
-	total_builds="$(( $(< ${paper_builds_ext} jq -r '.builds[].build' | wc -l) - 1 ))"
-	sha256="$(sha256sum "${paper_path}/${paper_jar}" | cut -d ' ' -f1)"
-
-	# User is likely to have newer build, so let's count backwards to speed this up.
-	for (( i=total_builds; i>=0; --i ))
+	#thanks Daenyth! https://stackoverflow.com/a/3330834
+	local k=1
+	local sp="/-\|"
+	
+	for (( i=version_count-1; i>=0; --i ))
 	do
-		sha256_test="$(< ${paper_builds_ext} jq -r ".builds[$i].downloads.application.sha256")"
-		cur_build_test="$(< ${paper_builds_ext} jq -r ".builds[$i].build")"
-		if [ "${sha256}" = "${sha256_test}" ]
-		then
-			echo "Current installed Paper ${paper_ver} build is ${cur_build_test}"
-			exit 0
-		else
-			continue
-		fi
+		paper_ver="$(< "${paper_versions}" jq -r ".versions[$i]")"
+		get_build_json
+		curl -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq . > "${paper_builds_ext}"
+		for (( j=build_count-1; j>=0; --j ))
+		do
+			
+			#thanks Daenyth! https://stackoverflow.com/a/3330834
+			echo -n ' '
+		    printf "\b%s\r" "${sp:k++%${#sp}:1}"
+			
+			################################################################################	
+
+			sha256_test="$(< ${paper_builds_ext} jq -r ".builds[$j].downloads.application.sha256")"
+			cur_build_test="$(< ${paper_builds_ext} jq -r ".builds[$j].build")"
+			if [ "${sha256}" = "${sha256_test}" ]
+			then
+				cur_channel_test="$(< "${paper_builds_ext}" jq -r ".builds[$j].channel")"
+				echo "Current installed Paper ${paper_ver} ${cur_channel_test} build is ${cur_build_test}"
+				exit 0
+			else
+				continue
+			fi
+		done
 	done
 
-	error_msg "could not determine build number\nPaper version likely differs from specified."
+	error_msg "could not determine build number."
 }
 
 list_versions() {
@@ -278,14 +336,17 @@ list_versions() {
 	then
 		error_msg "curl: API error"
 	else
-		if $force_new_json
-		then
-		    echo -e "\nNote: option '-F' not necessary."
-		fi
-
 		exit 0
 	fi
 
+}
+
+list_builds_e() {
+	build="$(< "${paper_builds_ext}" jq -r ".[$1].build")"
+	commit_hash="$(< "${paper_builds_ext}" jq -r ".[$1].changes[].commit")"
+	build_summary="$(< "${paper_builds_ext}" jq -r ".[$1].changes[].summary")"
+
+	echo -e "Build ${build}\n  Channel: ${channel}\n  Commit: ${commit_hash}\n  Summary: ${build_summary}\n"
 }
 
 list_builds() {
@@ -300,27 +361,42 @@ list_builds() {
 		paper_ver="$(< ${paper_versions} jq -r '.versions[-1]')"
 	fi
 
-	curl --fail -sX GET "${paper_api}/projects/paper/versions/${paper_ver}/builds/" | jq -r . > "${paper_builds_ext}"
-	if [ ! "${PIPESTATUS[0]}" -eq 0 ]
-	then
-		if [ ! -s "${paper_builds}" ]
-		then
-			rm -f "${paper_builds}"
-		fi
-		error_msg "curl: API error"
-	fi
+	valid_ver
+	get_build_count
 	
+	if [ "${E_flag}" == "true" ] && [ "${build_count}" -lt 1 ]
+	then
+		error_msg "Paper ${paper_ver} has no experimental builds available."
+	elif [ "${build_count}" -lt 1 ]
+	then
+		error_msg "Paper ${paper_ver} has no builds available."
+	fi
+
+	if [ "${build_count}" -ge 5 ]
+	then
+		build_count=5
+	fi
+
 	local build
 
-	echo -e "Paper ${paper_ver} (5 most recent builds)\n---------------"
+	if [ "$E_flag" == "true" ]
+	then
+		printf "%s\n%s\n" "Paper ${paper_ver} (${build_count} most recent experimental builds)" "---------------"
+	else
+		printf "%s\n%s\n" "Paper ${paper_ver} (${build_count} most recent stable builds)" "---------------"
+	fi
+	
+	if [ "$E_flag" == "true" ]
+	then
+		channel="experimental"
+	else
+		channel="default"
+	fi
+	
 	# -1, -2, -3, -4, -5... (in this order since -1 is newest). jq can iterate in reverse
-	for (( i=-1; i>=-5; --i ))
+	for (( i=-1; i>=-build_count; --i ))
 	do
-		build="$(< "${paper_builds_ext}" jq -r ".builds[$i].build")"
-		commit_hash="$(< "${paper_builds_ext}" jq -r ".builds[$i].changes[].commit")"
-		build_summary="$(< "${paper_builds_ext}" jq -r ".builds[$i].changes[].summary")"
-
-		echo -e "Build ${build}\n  Commit: ${commit_hash}\n  Summary: ${build_summary}\n"
+		list_builds_e "$i"
 	done
 
 	exit 0
@@ -331,6 +407,12 @@ version() {
 	exit 0
 }
 
+runChecks() {
+	check_net
+	check_reqs
+	check_tmp
+}
+
 # there are some spaces mixed here so bash outputs formatting as expected
 # first two are tabs, next two are spaces, thereafter tabs.
 usage() {
@@ -339,7 +421,6 @@ usage() {
 	${formal_name} uses the PaperMC API to obtain build information
 	and download requested version and build.
 	
-	Required files are stored in same directory as program.
 	Options required by another must precede.
 
 	Examples:
@@ -352,14 +433,14 @@ usage() {
 	  -h		displays this help
 	  -u		set the Paper version
 	  -b		set the Paper build; requires -u (optional)
-	  -g		get build of current Paper jar; requires -u. -o and -n are optional
+	  -g		get build of current Paper jar; -o and -n are optional
 	  -n		set name for Paper jar; defaults to "paper.jar"
 	  -o		set output location for download; defaults to current directory
 	  -l		list Paper versions
 	  -L		list last five Paper builds; without -u, defaults to newest version
 	  -f		overwrite existing Paper jar
-	  -F		force download new Paper version and build jsons from API
-	 	 	this is to reduce API requests. Supply -F to update build list often
+	  
+	  -E		'experimental' builds only
 
 	  -v		display version
 
@@ -367,7 +448,7 @@ EOF
 exit 0
 }
 
-while getopts ":vhu:b:gn:o:lLfF" opt
+while getopts ":vhEu:b:gn:o:lLf" opt
 do
 	case ${opt} in
 		v)
@@ -375,6 +456,9 @@ do
 			;;
 		h)
 			usage
+			;;
+		E)
+			E_flag=true
 			;;
 		u)
 			paper_ver="${OPTARG}"
@@ -404,18 +488,13 @@ do
 			paper_path=$(realpath -s -m "${OPTARG/#\~/$HOME}")
 			;;
 		g)
-			if ! $u_flag; then error_msg "$(error_option "g" "-u")"; fi
+			#if ! $u_flag; then error_msg "$(error_option "g" "-u")"; fi
 			g_flag=true
 			;;
 		f)
 			if $g_flag; then error_msg "option -- 'g' is exclusive"; fi
 			if ! $u_flag; then no_ver_set=true; fi
 			f_flag=true
-			;;
-		F)
-			if $g_flag; then error_msg "option -- 'g' is exclusive"; fi
-			if ! $u_flag; then no_ver_set=true; fi
-			force_new_json=true
 			;;
 		\?)
 			error_msg "invalid option -- '${OPTARG}'\nUse '${prog_name} -h' to see help."
@@ -433,8 +512,7 @@ then
 	no_ver_set=true
 fi
 
-check_net
-check_reqs
+runChecks
 cur_build
 list_versions
 list_builds
