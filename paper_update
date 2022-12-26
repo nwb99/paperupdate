@@ -3,7 +3,7 @@
 #==========================================================
 # YAPManTool Updater
 # (c) 2022 Nathan "nwb99" Barnett, see LICENSE
-# version 0.4.1
+# version 0.4.2
 #
 # requires bash (likely old v3 won't work.)
 # on macOS, recommended to install newer bash using brew
@@ -55,7 +55,7 @@ paper_versions="${tmp_dir}/paper_versions.json"
 prog_name="$(basename "${0}")"
 formal_name="YAPManTool Updater"
 
-script_ver="0.4.1"
+script_ver="0.4.2"
 
 # default flags which are changed by getopts
 u_flag=false
@@ -230,6 +230,7 @@ update() {
 
 	valid_ver
 	get_build_count
+	get_build_json
 
 	if [ "${E_flag}" == "true" ] && [ "${build_count}" -lt 1 ]
 	then
@@ -251,7 +252,7 @@ update() {
 	# check if exists and if '-f' force is supplied. Download JAR.
 	if [ -s "${paper_path}/${paper_jar}" ] && ! $f_flag
 	then
-		error_msg "file "${paper_path}/${paper_jar}" already exists.\nUse option '-f' to force download."
+		error_msg "file "${paper_path}/${paper_jar}" already exists.\nUse option '-f' to force overwrite."
 	fi
 
 	download_url="${paper_api}/projects/paper/versions/${paper_ver}/builds/${build}/downloads/paper-${paper_ver}-${build}.jar"
@@ -342,11 +343,12 @@ list_versions() {
 }
 
 list_builds_e() {
+	# parse and format these at some point 2022-12-25. awk maybe
 	build="$(< "${paper_builds_ext}" jq -r ".[$1].build")"
 	commit_hash="$(< "${paper_builds_ext}" jq -r ".[$1].changes[].commit")"
 	build_summary="$(< "${paper_builds_ext}" jq -r ".[$1].changes[].summary")"
 
-	echo -e "Build ${build}\n  Channel: ${channel}\n  Commit: ${commit_hash}\n  Summary: ${build_summary}\n"
+	echo -e "Build ${build}\n  Channel:\t${channel}\n  Commit:\t${commit_hash}\n Summary:\t${build_summary}\n"
 }
 
 list_builds() {
@@ -445,7 +447,7 @@ usage() {
 	  -f		overwrite existing Paper jar
 	  -E		'experimental' builds only
 
-	  -v		display version
+	#   -v		display version
 
 EOF
 exit 0
@@ -488,10 +490,15 @@ do
 			;;
 		o)
 			if ! $u_flag; then no_ver_set=true; fi
-			paper_path=$(realpath -s -m "${OPTARG/#\~/$HOME}")
+			# work around if macOS doesn't have GNU coreutils installed.
+			if ! command -v realpath &> /dev/null
+			then
+				paper_path="$(cd "${OPTARG/#\~/$HOME}" || exit 1; pwd -P)"
+			else
+				paper_path=$(realpath -m "${OPTARG/#\~/$HOME}")
+			fi
 			;;
 		g)
-			#if ! $u_flag; then error_msg "$(error_option "g" "-u")"; fi
 			g_flag=true
 			;;
 		f)
