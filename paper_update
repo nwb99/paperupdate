@@ -2,8 +2,8 @@
 
 #==========================================================
 # YAPManTool Updater
-# (c) 2022 Nathan "nwb99" Barnett, see LICENSE
-# version 0.4.2
+# (c) 2022-2023 Nathan "nwb99" Barnett, see LICENSE
+# version 0.4.3
 #
 # requires bash (likely old v3 won't work.)
 # on macOS, recommended to install newer bash using brew
@@ -47,7 +47,7 @@ fi
 paper_jar="paper.jar"
 paper_path="."
 tmp_dir="/tmp/paperupdate"
-paper_api="https://papermc.io/api/v2"
+paper_api="https://api.papermc.io/v2"
 paper_builds="${tmp_dir}/paper_builds.json"
 paper_builds_ext="${tmp_dir}/paper_builds_ext.json"
 paper_versions="${tmp_dir}/paper_versions.json"
@@ -55,7 +55,7 @@ paper_versions="${tmp_dir}/paper_versions.json"
 prog_name="$(basename "${0}")"
 formal_name="YAPManTool Updater"
 
-script_ver="0.4.2"
+script_ver="0.4.3"
 
 # default flags which are changed by getopts
 u_flag=false
@@ -348,7 +348,7 @@ list_builds_e() {
 	commit_hash="$(< "${paper_builds_ext}" jq -r ".[$1].changes[].commit")"
 	build_summary="$(< "${paper_builds_ext}" jq -r ".[$1].changes[].summary")"
 
-	echo -e "Build ${build}\n  Channel:\t${channel}\n  Commit:\t${commit_hash}\n Summary:\t${build_summary}\n"
+	echo -e "Build ${build}\n Channel:\t${channel}\n  Commit:\t${commit_hash}\n Summary:\t${build_summary}\n"
 }
 
 list_builds() {
